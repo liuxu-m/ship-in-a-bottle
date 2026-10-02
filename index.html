@@ -6,7 +6,8 @@
 <title>瓶中沧海 · A Sea in a Bottle</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;overflow:hidden;background:#0b0907;color:#ead9bf}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0907;color:#ead9bf;
+            overscroll-behavior:none;-webkit-text-size-adjust:100%}
   body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
        -webkit-font-smoothing:antialiased;user-select:none}
   canvas{display:block;touch-action:none}
@@ -26,8 +27,9 @@
       border-radius:2px;color:#c9b18d;background:rgba(20,14,9,.4);cursor:pointer;transition:.18s}
   .sp:hover{border-color:rgba(226,196,146,.6);color:#f4e2bd}
   .sp.on{background:rgba(226,196,146,.9);color:#1a1208;border-color:transparent;font-weight:700}
-  #stormwrap{margin-top:14px;display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  #stormwrap{margin-top:14px;display:flex;align-items:center;gap:8px;justify-content:flex-end;pointer-events:auto}
   #stormwrap span{font-size:10px;letter-spacing:.3em;color:#8f7b60}
+  #stormbtn{padding:5px 10px;letter-spacing:.14em}
   #stormbar{width:104px;height:3px;background:rgba(226,196,146,.16);border-radius:2px;overflow:hidden}
   #stormfill{height:100%;width:0;background:linear-gradient(90deg,#6fa8c8,#cfe6f2);transition:width .08s linear}
   #fps{margin-top:9px;font-size:10px;letter-spacing:.24em;color:#7d6a52;font-variant-numeric:tabular-nums}
@@ -39,7 +41,36 @@
   #boot .bar{width:170px;height:2px;background:rgba(226,196,146,.18);overflow:hidden}
   #boot .bar i{display:block;width:40%;height:100%;background:#e2c492;animation:sweep 1.1s ease-in-out infinite}
   @keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
-  @media (max-width:640px){#hud h1{font-size:18px}#keys{display:none}#panel{right:16px;top:18px}}
+  #mtouch{position:fixed;left:0;right:0;bottom:14px;display:none;justify-content:center;gap:8px;
+          pointer-events:none;font-size:10.5px;letter-spacing:.12em}
+  #mtouch span{padding:7px 11px;border:1px solid rgba(226,196,146,.3);border-radius:999px;
+               background:rgba(18,12,7,.55);color:#dcc79c;white-space:nowrap}
+  @media (max-width:860px),(pointer:coarse){
+    #keys{display:none}
+    #mtouch{display:flex}
+    #hud{left:16px;top:16px}
+    #hud h1{font-size:17px;letter-spacing:.24em}
+    #hud .sub{font-size:9px;letter-spacing:.3em}
+    #panel{right:14px;top:14px}
+    #phase{font-size:19px}
+    #clock{font-size:10px}
+    .sp{padding:8px 11px;font-size:12px}
+    #stormbar{width:74px}
+  }
+  @media (max-width:420px){ #hud .sub{display:none} }
+  @media (max-height:520px) and (orientation:landscape){
+    #hud .sub{display:none}
+    #hud h1{font-size:15px;letter-spacing:.18em}
+    #panel{top:10px;right:12px}
+    #phase{font-size:15px}
+    #clock{font-size:9px;margin-top:2px}
+    #speeds{margin-top:7px;gap:5px}
+    .sp{padding:6px 9px;font-size:11px}
+    #stormwrap{margin-top:7px;gap:6px}
+    #fps{display:none}
+    #mtouch{bottom:6px;font-size:9.5px;gap:6px}
+    #mtouch span{padding:4px 8px}
+  }
 </style>
 </head>
 <body>
@@ -61,7 +92,8 @@
     <div class="sp" data-s="12">×12</div>
     <div class="sp" data-s="0">暂停</div>
   </div>
-  <div id="stormwrap"><span>STORM</span><div id="stormbar"><div id="stormfill"></div></div></div>
+  <div id="stormwrap"><span>STORM</span><div id="stormbar"><div id="stormfill"></div></div>
+    <div class="sp" id="stormbtn" title="按 Space">起风</div></div>
   <div id="fps">— FPS</div>
 </div>
 
@@ -72,6 +104,8 @@
   <div><b>1 / 2 / 3</b>延时 ×1 / ×4 / ×12</div>
   <div><b>0 或 P</b>暂停时间</div>
 </div>
+
+<div id="mtouch"><span>单指拖动 · 环视</span><span>双指捏合 · 缩放</span><span>点「风暴」· 掀起风浪</span></div>
 
 <div id="boot"><div>载入 THREE.JS r160</div><div class="bar"><i></i></div></div>
 
@@ -133,7 +167,7 @@ const LEN     = 25.6;            // 瓶全长
 const WATER_Y = -0.55;           // 瓶内水平面（相对瓶轴）
 const WAVE_A  = 0.215;           // 常浪高
 const WAVE_AS = 0.345;           // 风暴浪高
-const CELL    = 0.26;            // 体素水面栅格
+const CELL    = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) ? 0.31 : 0.26;  // 体素水面栅格
 
 // 剖面：u=0 为瓶底，u=1 为瓶口。腹 → 肩 → 细颈 → 厚唇
 const PROFILE = [
@@ -164,9 +198,11 @@ function waveH(x, z, t, a) {
 /* ============================================================================
    3. 渲染器 / 场景 / 相机
    ========================================================================== */
+const COARSE = (matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 700);
+
 const stage = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+const renderer = new THREE.WebGLRenderer({ antialias: !COARSE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1);
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;
@@ -176,19 +212,28 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x140f0a, 0.0062);
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.08, 420);
 
-const RT_SCALE = 0.7;
+const RT_SCALE = COARSE ? 0.5 : 0.7;
 const rt = new THREE.WebGLRenderTarget(2, 2, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 const glassU = { uRes: { value: new THREE.Vector2(1, 1) } };
 
+// 按总像素预算反推 devicePixelRatio：手机高 DPR 下填充率不失控
+const PIXEL_BUDGET = COARSE ? 1.25e6 : 3.6e6;
+function pixelRatio() {
+  const n = innerWidth * innerHeight;
+  return Math.max(1, Math.min(devicePixelRatio || 1, 2, Math.sqrt(PIXEL_BUDGET / n)));
+}
 function onResize() {
   const w = innerWidth, h = innerHeight;
+  const pr = pixelRatio();
+  renderer.setPixelRatio(pr);
   renderer.setSize(w, h);
   camera.aspect = w / h; camera.updateProjectionMatrix();
-  const pr = renderer.getPixelRatio();
   rt.setSize(Math.max(2, Math.floor(w * pr * RT_SCALE)), Math.max(2, Math.floor(h * pr * RT_SCALE)));
   glassU.uRes.value.set(w * pr, h * pr);
+  fitCamera(true);
 }
-addEventListener('resize', onResize); onResize();
+addEventListener('resize', onResize);
+addEventListener('orientationchange', () => setTimeout(onResize, 220));
 
 /* ============================================================================
    4. 程序化贴图
@@ -1171,19 +1216,66 @@ const ST = {
   t: 0, day: 0.715, speed: 1, storm: 0, stormT: 0, flash: 0, nextBolt: 3,
   paused: false
 };
-const cam = { az: -0.85, el: 0.225, dist: 30.5, tx: 0, ty: 5.75, tz: 0, idle: 0, auto: 0, drag: false, px: 0, py: 0 };
+const cam = { az: -0.85, el: 0.225, dist: 30.5, tx: 0, ty: 5.75, tz: 0, idle: 0, auto: 0,
+              drag: false, px: 0, py: 0, zoom: 1, fit: 30.5, pts: new Map(), pinch: 0 };
+const ZMIN = 0.34, ZMAX = 2.4;
+let camReady = false;
+/* 依据视口比例重新取景：竖屏聚焦瓶腹内景，横屏看整只瓶子 */
+function fitCamera(keepZoom) {
+  if (!camReady) return;
+  const a = innerWidth / innerHeight;
+  if (a < 0.80)       { cam.fit = 23.0; cam.ty = 6.25; cam.elDefault = 0.30; }   // 竖屏：聚焦瓶腹内景
+  else if (a < 1.30)  { cam.fit = 26.5; cam.ty = 6.00; cam.elDefault = 0.26; }
+  else if (a < 1.60)  { cam.fit = 26.0; cam.ty = 5.90; cam.elDefault = 0.25; }
+  else {                                                            // 横屏：按像素宽度收紧，小屏手机不被空旷吃掉
+    cam.fit = clamp(20 + (innerWidth - 700) * 0.0096, 21, 30.5);
+    cam.ty = 5.75; cam.elDefault = 0.225;
+  }
+  if (keepZoom === undefined) keepZoom = false;
+  if (!keepZoom) { cam.zoom = 1; cam.el = cam.elDefault; }
+  cam.dist = clamp(cam.fit * cam.zoom, 8.5, 68);
+}
+function setZoom(z) { cam.zoom = clamp(z, ZMIN, ZMAX); cam.dist = clamp(cam.fit * cam.zoom, 8.5, 68); }
+fitCamera(false);
+camReady = true;
 {
   const el = stage;
-  el.addEventListener('pointerdown', e => { cam.drag = true; cam.px = e.clientX; cam.py = e.clientY; cam.idle = 0; el.classList.add('drag'); el.setPointerCapture(e.pointerId); });
+  const pointers = cam.pts;
+  const pinchDist = () => { const p = [...pointers.values()]; return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+  el.addEventListener('pointerdown', e => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { cam.drag = true; cam.px = e.clientX; cam.py = e.clientY; }
+    else { cam.drag = false; cam.pinch = pinchDist(); }
+    cam.idle = 0; el.classList.add('drag');
+    try { el.setPointerCapture(e.pointerId); } catch (x) { }
+  });
   el.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size >= 2) {                                  // 双指捏合缩放
+      const d = pinchDist();
+      if (cam.pinch > 0 && d > 0) setZoom(cam.zoom * (cam.pinch / d));
+      cam.pinch = d; cam.idle = 0; return;
+    }
     if (!cam.drag) return;
     cam.az -= (e.clientX - cam.px) * 0.0052;
     cam.el = clamp(cam.el + (e.clientY - cam.py) * 0.0038, -0.34, 0.86);
     cam.px = e.clientX; cam.py = e.clientY; cam.idle = 0;
   });
-  const up = e => { cam.drag = false; el.classList.remove('drag'); try { el.releasePointerCapture(e.pointerId); } catch (x) { } };
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  el.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * (1 + clamp(e.deltaY, -120, 120) * 0.0011), 8.5, 62); cam.idle = 0; }, { passive: false });
+  const up = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) cam.pinch = 0;
+    if (pointers.size === 0) { cam.drag = false; el.classList.remove('drag'); }
+    try { el.releasePointerCapture(e.pointerId); } catch (x) { }
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    setZoom(cam.zoom * (1 + clamp(e.deltaY, -120, 120) * 0.0011));
+    cam.idle = 0;
+  }, { passive: false });
+  el.addEventListener('dblclick', () => setZoom(cam.zoom > 1.2 ? 1 : 1.9));   // 双击复位
 }
 let spaceDown = false, stormLatch = false;
 const camKeys = {};
@@ -1201,8 +1293,8 @@ addEventListener('keydown', e => {
       if (e.code === 'ArrowRight') cam.az -= .16;
       if (e.code === 'ArrowUp') cam.el = clamp(cam.el + .085, -0.34, 0.86);
       if (e.code === 'ArrowDown') cam.el = clamp(cam.el - .085, -0.34, 0.86);
-      if (e.code === 'Equal' || e.code === 'NumpadAdd') cam.dist = clamp(cam.dist - 2.6, 8.5, 62);
-      if (e.code === 'Minus' || e.code === 'NumpadSubtract') cam.dist = clamp(cam.dist + 2.6, 8.5, 62);
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') setZoom(cam.zoom * 0.90);
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract') setZoom(cam.zoom * 1.10);
     }
   }
 });
@@ -1211,12 +1303,16 @@ addEventListener('keyup', e => {
   if (camKeys[e.code] !== undefined) camKeys[e.code] = false;
 });
 addEventListener('blur', () => { spaceDown = false; for (const k in camKeys) camKeys[k] = false; });
-const spEls = [...document.querySelectorAll('.sp')];
+const spEls = [...document.querySelectorAll('.sp[data-s]')];
 function setSpeed(s) {
   ST.speed = s; ST.paused = (s === 0);
   spEls.forEach(e => e.classList.toggle('on', +e.dataset.s === s));
 }
+spEls.forEach(e => e.addEventListener('click', () => setSpeed(+e.dataset.s)));
+const stormBtn = document.getElementById('stormbtn');
+stormBtn.addEventListener('click', e => { e.stopPropagation(); stormLatch = !stormLatch; });
 setSpeed(1);
+onResize();
 
 /* 昼夜关键色 */
 const C = {
@@ -1534,8 +1630,8 @@ function animate() {
     if (camKeys.ArrowRight) cam.az -= 1.1 * dt;
     if (camKeys.ArrowUp) cam.el = clamp(cam.el + 0.75 * dt, -0.34, 0.86);
     if (camKeys.ArrowDown) cam.el = clamp(cam.el - 0.75 * dt, -0.34, 0.86);
-    if (camKeys.Equal || camKeys.NumpadAdd) cam.dist = clamp(cam.dist - 16 * dt, 8.5, 62);
-    if (camKeys.Minus || camKeys.NumpadSubtract) cam.dist = clamp(cam.dist + 16 * dt, 8.5, 62);
+    if (camKeys.Equal || camKeys.NumpadAdd) setZoom(cam.zoom - 0.9 * dt);
+    if (camKeys.Minus || camKeys.NumpadSubtract) setZoom(cam.zoom + 0.9 * dt);
     cam.idle += dt;
     const want = (cam.drag || Object.values(camKeys).some(Boolean)) ? 0 : (cam.idle > 2.2 ? 1 : 0);
     cam.auto = damp(cam.auto, want * .17, want ? .5 : 3.2, dt);
@@ -1552,6 +1648,7 @@ function animate() {
     phaseEl.textContent = nm;
     clockEl.textContent = `${String(Math.floor(hrs)).padStart(2, '0')}:${String(Math.floor(hrs % 1 * 60)).padStart(2, '0')}  /  ${ST.speed ? '×' + ST.speed : '暂停'}`;
     stormFill.style.width = (S * 100).toFixed(0) + '%';
+    stormBtn.classList.toggle('on', S > 0.5);
     fpsEl.textContent = window.__fps ? window.__fps + ' FPS' : '— FPS';
   }
 
