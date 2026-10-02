@@ -3,7 +3,7 @@
 一艘三桅帆船，在封闭于横卧玻璃瓶内的海洋上航行。
 体素微缩场景 · Three.js r160 · WebGL · 单文件
 
-**在线体验：** 由 GitHub Pages 托管分发（发布后此处填入实际地址）。
+**在线体验：** <https://avk7o6bjb1rd8.space.mcode.cn>（公网托管，CDN 分发）
 
 ## 本地打开
 
