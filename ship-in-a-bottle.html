@@ -30,6 +30,8 @@
   #stormwrap{margin-top:14px;display:flex;align-items:center;gap:8px;justify-content:flex-end;pointer-events:auto}
   #stormwrap span{font-size:10px;letter-spacing:.3em;color:#8f7b60}
   #stormbtn{padding:5px 10px;letter-spacing:.14em}
+  #viewwrap{margin-top:8px;display:flex;justify-content:flex-end;pointer-events:auto}
+  #viewbtn{padding:5px 10px;letter-spacing:.14em}
   #stormbar{width:104px;height:3px;background:rgba(226,196,146,.16);border-radius:2px;overflow:hidden}
   #stormfill{height:100%;width:0;background:linear-gradient(90deg,#6fa8c8,#cfe6f2);transition:width .08s linear}
   #fps{margin-top:9px;font-size:10px;letter-spacing:.24em;color:#7d6a52;font-variant-numeric:tabular-nums}
@@ -94,6 +96,7 @@
   </div>
   <div id="stormwrap"><span>STORM</span><div id="stormbar"><div id="stormfill"></div></div>
     <div class="sp" id="stormbtn" title="按 Space">起风</div></div>
+  <div id="viewwrap"><div class="sp" id="viewbtn" title="全景 / 内景">内景</div></div>
   <div id="fps">— FPS</div>
 </div>
 
@@ -105,7 +108,7 @@
   <div><b>0 或 P</b>暂停时间</div>
 </div>
 
-<div id="mtouch"><span>单指拖动 · 环视</span><span>双指捏合 · 缩放</span><span>点「风暴」· 掀起风浪</span></div>
+<div id="mtouch"><span>单指拖动 · 环视</span><span>双指捏合 · 远近</span><span>双击 · 复位</span><span>点「起风」· 掀起风浪</span></div>
 
 <div id="boot"><div>载入 THREE.JS r160</div><div class="bar"><i></i></div></div>
 
@@ -1217,25 +1220,37 @@ const ST = {
   paused: false
 };
 const cam = { az: -0.85, el: 0.225, dist: 30.5, tx: 0, ty: 5.75, tz: 0, idle: 0, auto: 0,
-              drag: false, px: 0, py: 0, zoom: 1, fit: 30.5, pts: new Map(), pinch: 0 };
-const ZMIN = 0.34, ZMAX = 2.4;
+              drag: false, px: 0, py: 0, zoom: 1, fit: 30.5, pts: new Map(), pinch: 0, elDefault: 0.225 };
+const ZMIN = 0.26, ZMAX = 3.2, DIST_MIN = 8.5, DIST_MAX = 200;
+const Z_WIDE = 1.0;      // 全景：整瓶入画
+const Z_DIARAMA = 0.45;   // 内景：推近到瓶腹
 let camReady = false;
-/* 依据视口比例重新取景：竖屏聚焦瓶腹内景，横屏看整只瓶子 */
+/* 取景：按视口比例算出"能装下整只瓶子"的距离
+   可见宽 = 2·d·tan(FOV/2)·aspect = 0.728·d·aspect
+   瓶长 25.6，留 7.5% 余量 → d ≥ 27.5 / (0.728·aspect)
+   竖屏 aspect 越小所需越远（0.46 → 81.8），这是"横瓶塞进窄屏"的硬几何代价：
+   装下整瓶后它只能占屏高 1/6。⚠️ 曾试过把相机绕视轴滚 90° 让瓶子"立起来"，
+   但那样瓶内的水面在屏幕上会变成一堵竖墙，破坏"水面恒平"这个核心不变量，已废弃。 */
 function fitCamera(keepZoom) {
   if (!camReady) return;
   const a = innerWidth / innerHeight;
-  if (a < 0.80)       { cam.fit = 23.0; cam.ty = 6.25; cam.elDefault = 0.30; }   // 竖屏：聚焦瓶腹内景
-  else if (a < 1.30)  { cam.fit = 26.5; cam.ty = 6.00; cam.elDefault = 0.26; }
-  else if (a < 1.60)  { cam.fit = 26.0; cam.ty = 5.90; cam.elDefault = 0.25; }
-  else {                                                            // 横屏：按像素宽度收紧，小屏手机不被空旷吃掉
-    cam.fit = clamp(20 + (innerWidth - 700) * 0.0096, 21, 30.5);
-    cam.ty = 5.75; cam.elDefault = 0.225;
-  }
+  cam.fit = clamp(Math.max(27.5 / (0.728 * a), 20 + (innerWidth - 700) * 0.0096), 21, 95);
+  const wide = a >= 1.45;                                    // 宽屏保留桌面构图
+  cam.tx = wide ? 0 : 5.6;                                  // 窄屏以瓶身轴向中心取景
+  cam.ty = wide ? 5.75 : 6.15;
+  cam.elDefault = wide ? 0.225 : 0.27;                      // 窄屏多俯一点，让桌面撑满竖向留白
   if (keepZoom === undefined) keepZoom = false;
   if (!keepZoom) { cam.zoom = 1; cam.el = cam.elDefault; }
-  cam.dist = clamp(cam.fit * cam.zoom, 8.5, 68);
+  cam.dist = clamp(cam.fit * cam.zoom, DIST_MIN, DIST_MAX);
 }
-function setZoom(z) { cam.zoom = clamp(z, ZMIN, ZMAX); cam.dist = clamp(cam.fit * cam.zoom, 8.5, 68); }
+function setZoom(z) { cam.zoom = clamp(z, ZMIN, ZMAX); cam.dist = clamp(cam.fit * cam.zoom, DIST_MIN, DIST_MAX); }
+/* 全景 ↔ 内景 一键切换（不改变瓶身方向） */
+function setView(diorama) {
+  setZoom(diorama ? Z_DIARAMA : Z_WIDE);
+  cam.idle = 0;
+  viewBtn.classList.toggle('on', !!diorama);
+  viewBtn.textContent = diorama ? '全景' : '内景';
+}
 fitCamera(false);
 camReady = true;
 {
@@ -1275,7 +1290,7 @@ camReady = true;
     setZoom(cam.zoom * (1 + clamp(e.deltaY, -120, 120) * 0.0011));
     cam.idle = 0;
   }, { passive: false });
-  el.addEventListener('dblclick', () => setZoom(cam.zoom > 1.2 ? 1 : 1.9));   // 双击复位
+  el.addEventListener('dblclick', () => setView(cam.zoom > (Z_DIARAMA + Z_WIDE) / 2));   // 双击切全景/内景
 }
 let spaceDown = false, stormLatch = false;
 const camKeys = {};
@@ -1311,6 +1326,8 @@ function setSpeed(s) {
 spEls.forEach(e => e.addEventListener('click', () => setSpeed(+e.dataset.s)));
 const stormBtn = document.getElementById('stormbtn');
 stormBtn.addEventListener('click', e => { e.stopPropagation(); stormLatch = !stormLatch; });
+const viewBtn = document.getElementById('viewbtn');
+viewBtn.addEventListener('click', e => { e.stopPropagation(); setView(cam.zoom > (Z_DIARAMA + Z_WIDE) / 2); });
 setSpeed(1);
 onResize();
 
@@ -1635,7 +1652,8 @@ function animate() {
     cam.idle += dt;
     const want = (cam.drag || Object.values(camKeys).some(Boolean)) ? 0 : (cam.idle > 2.2 ? 1 : 0);
     cam.auto = damp(cam.auto, want * .17, want ? .5 : 3.2, dt);
-    cam.az += cam.auto * dt;
+    if (Number.isFinite(cam.az)) cam.az += cam.auto * dt; else cam.az = 0;
+    camera.up.set(0, 1, 0);
     const ce = Math.cos(cam.el), se = Math.sin(cam.el);
     camera.position.set(cam.tx + Math.sin(cam.az) * ce * cam.dist, cam.ty + se * cam.dist, cam.tz + Math.cos(cam.az) * ce * cam.dist);
     camera.lookAt(cam.tx, cam.ty, cam.tz);
