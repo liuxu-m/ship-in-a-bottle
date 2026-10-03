@@ -1310,14 +1310,14 @@ camReady = true;
     setZoom(cam.zoom * (1 + clamp(e.deltaY, -120, 120) * 0.0011));
     cam.idle = 0;
   }, { passive: false });
-  el.addEventListener('dblclick', () => setView(cam.focusT > 0.5));   // 双击切全景/内景
+  el.addEventListener('dblclick', () => setView(cam.focusT < 0.5));   // 双击切全景/内景
 }
 let spaceDown = false, stormLatch = false;
 const camKeys = {};
 addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); spaceDown = true; }
   if (e.code === 'KeyF') stormLatch = !stormLatch;
-  if (e.code === 'KeyV') setView(cam.focusT > 0.5);
+  if (e.code === 'KeyV') setView(cam.focusT < 0.5);
   if (e.code === 'Digit1') setSpeed(1);
   if (e.code === 'Digit2') setSpeed(4);
   if (e.code === 'Digit3') setSpeed(12);
@@ -1348,7 +1348,7 @@ spEls.forEach(e => e.addEventListener('click', () => setSpeed(+e.dataset.s)));
 const stormBtn = document.getElementById('stormbtn');
 stormBtn.addEventListener('click', e => { e.stopPropagation(); stormLatch = !stormLatch; });
 const viewBtn = document.getElementById('viewbtn');
-viewBtn.addEventListener('click', e => { e.stopPropagation(); setView(cam.focusT > 0.5); });
+viewBtn.addEventListener('click', e => { e.stopPropagation(); setView(cam.focusT < 0.5); });
 setSpeed(1);
 onResize();
 
