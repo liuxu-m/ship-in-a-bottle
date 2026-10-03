@@ -1220,10 +1220,10 @@ const ST = {
   paused: false
 };
 const cam = { az: -0.85, el: 0.225, dist: 30.5, tx: 0, ty: 5.75, tz: 0, idle: 0, auto: 0,
-              drag: false, px: 0, py: 0, zoom: 1, fit: 30.5, pts: new Map(), pinch: 0, elDefault: 0.225 };
+              drag: false, px: 0, py: 0, zoom: 1, fit: 30.5, pts: new Map(), pinch: 0, elDefault: 0.225,
+              focus: 0, focusT: 0, fitWide: 30.5, fitDia: 12, elWide: 0.225, elDia: 0.30,
+              wideTx: 0, wideTy: 5.75, wideTz: 0, diaTx: 0, diaTy: 6.45, diaTz: 0 };
 const ZMIN = 0.26, ZMAX = 3.2, DIST_MIN = 8.5, DIST_MAX = 200;
-const Z_WIDE = 1.0;      // 全景：整瓶入画
-const Z_DIARAMA = 0.45;   // 内景：推近到瓶腹
 let camReady = false;
 /* 取景：按视口比例算出"能装下整只瓶子"的距离
    可见宽 = 2·d·tan(FOV/2)·aspect = 0.728·d·aspect
@@ -1234,19 +1234,37 @@ let camReady = false;
 function fitCamera(keepZoom) {
   if (!camReady) return;
   const a = innerWidth / innerHeight;
-  cam.fit = clamp(Math.max(27.5 / (0.728 * a), 20 + (innerWidth - 700) * 0.0096), 21, 95);
+  // ① 全景：按视口比例算出"能装下整只瓶子"的距离
+  //    可见宽 = 2·d·tan(FOV/2)·aspect = 0.728·d·aspect；瓶长 25.6，留 7.5% 余量
+  cam.fitWide = clamp(Math.max(27.5 / (0.728 * a), 20 + (innerWidth - 700) * 0.0096), 21, 95);
   const wide = a >= 1.45;                                    // 宽屏保留桌面构图
-  cam.tx = wide ? 0 : 5.6;                                  // 窄屏以瓶身轴向中心取景
-  cam.ty = wide ? 5.75 : 6.15;
-  cam.elDefault = wide ? 0.225 : 0.27;                      // 窄屏多俯一点，让桌面撑满竖向留白
+  cam.wideTx = wide ? 0 : 5.6;                               // 窄屏以瓶身轴向中心取景
+  cam.wideTy = wide ? 5.75 : 6.15;
+  cam.wideTz = 0;
+  cam.elWide = wide ? 0.225 : 0.27;                         // 窄屏多俯一点，让桌面撑满竖向留白
+  // ② 内景：焦点给岛屿（瓶内世界局部坐标 0.15, -0.10，海面在 -0.55）
+  cam.diaTx = IC.x; cam.diaTy = BOT_Y + 0.35; cam.diaTz = IC.z;
+  cam.fitDia = clamp(9.6 / (0.728 * a), 6, 46);              // 约 7 单位宽的微缩场景占 75% 画幅
+  cam.elDia = wide ? 0.30 : 0.34;                            // 稍俯，能看进瓶腹
   if (keepZoom === undefined) keepZoom = false;
-  if (!keepZoom) { cam.zoom = 1; cam.el = cam.elDefault; }
-  cam.dist = clamp(cam.fit * cam.zoom, DIST_MIN, DIST_MAX);
+  if (!keepZoom) cam.zoom = 1;
+  applyFraming(true);
 }
-function setZoom(z) { cam.zoom = clamp(z, ZMIN, ZMAX); cam.dist = clamp(cam.fit * cam.zoom, DIST_MIN, DIST_MAX); }
-/* 全景 ↔ 内景 一键切换（不改变瓶身方向） */
+/* 按当前 focus 混合两套取景（focus 0=全景 1=内景），切换时由阻尼产生平滑推拉 */
+function applyFraming(snap) {
+  const f = cam.focus;
+  cam.tx = lerp(cam.wideTx, cam.diaTx, f);
+  cam.ty = lerp(cam.wideTy, cam.diaTy, f);
+  cam.tz = lerp(cam.wideTz, cam.diaTz, f);
+  cam.elDefault = lerp(cam.elWide, cam.elDia, f);
+  cam.dist = clamp(lerp(cam.fitWide, cam.fitDia, f) * cam.zoom, DIST_MIN, DIST_MAX);
+  if (snap) cam.el = cam.elDefault;
+}
+function setZoom(z) { cam.zoom = clamp(z, ZMIN, ZMAX); applyFraming(false); }
+/* 全景 ↔ 内景：不仅改距离，注视点也从「瓶身中点」移到「岛屿」 */
 function setView(diorama) {
-  setZoom(diorama ? Z_DIARAMA : Z_WIDE);
+  cam.focusT = diorama ? 1 : 0;
+  cam.zoom = 1;
   cam.idle = 0;
   viewBtn.classList.toggle('on', !!diorama);
   viewBtn.textContent = diorama ? '全景' : '内景';
@@ -1290,7 +1308,7 @@ camReady = true;
     setZoom(cam.zoom * (1 + clamp(e.deltaY, -120, 120) * 0.0011));
     cam.idle = 0;
   }, { passive: false });
-  el.addEventListener('dblclick', () => setView(cam.zoom > (Z_DIARAMA + Z_WIDE) / 2));   // 双击切全景/内景
+  el.addEventListener('dblclick', () => setView(cam.focusT > 0.5));   // 双击切全景/内景
 }
 let spaceDown = false, stormLatch = false;
 const camKeys = {};
@@ -1327,7 +1345,7 @@ spEls.forEach(e => e.addEventListener('click', () => setSpeed(+e.dataset.s)));
 const stormBtn = document.getElementById('stormbtn');
 stormBtn.addEventListener('click', e => { e.stopPropagation(); stormLatch = !stormLatch; });
 const viewBtn = document.getElementById('viewbtn');
-viewBtn.addEventListener('click', e => { e.stopPropagation(); setView(cam.zoom > (Z_DIARAMA + Z_WIDE) / 2); });
+viewBtn.addEventListener('click', e => { e.stopPropagation(); setView(cam.focusT > 0.5); });
 setSpeed(1);
 onResize();
 
@@ -1650,6 +1668,12 @@ function animate() {
     if (camKeys.Equal || camKeys.NumpadAdd) setZoom(cam.zoom - 0.9 * dt);
     if (camKeys.Minus || camKeys.NumpadSubtract) setZoom(cam.zoom + 0.9 * dt);
     cam.idle += dt;
+    // 视图模式过渡：注视点由「瓶身中点」滑向「岛屿」，距离随之推拉
+    if (Math.abs(cam.focus - cam.focusT) > 0.0005) {
+      cam.focus = damp(cam.focus, cam.focusT, 2.6, dt);
+      applyFraming(false);
+      cam.el = damp(cam.el, cam.elDefault, 2.6, dt);
+    }
     const want = (cam.drag || Object.values(camKeys).some(Boolean)) ? 0 : (cam.idle > 2.2 ? 1 : 0);
     cam.auto = damp(cam.auto, want * .17, want ? .5 : 3.2, dt);
     if (Number.isFinite(cam.az)) cam.az += cam.auto * dt; else cam.az = 0;
