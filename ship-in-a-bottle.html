@@ -24,7 +24,8 @@
   #clock{font-size:11px;letter-spacing:.28em;color:#a89173;margin-top:4px;font-variant-numeric:tabular-nums}
   #speeds{margin-top:12px;display:flex;gap:6px;justify-content:flex-end;pointer-events:auto}
   .sp{font-size:11px;letter-spacing:.08em;padding:5px 9px;border:1px solid rgba(226,196,146,.28);
-      border-radius:2px;color:#c9b18d;background:rgba(20,14,9,.4);cursor:pointer;transition:.18s}
+      border-radius:2px;color:#c9b18d;background:rgba(20,14,9,.4);cursor:pointer;transition:.18s;
+      font-family:inherit;appearance:none;-webkit-appearance:none;line-height:1.25;margin:0}
   .sp:hover{border-color:rgba(226,196,146,.6);color:#f4e2bd}
   .sp.on{background:rgba(226,196,146,.9);color:#1a1208;border-color:transparent;font-weight:700}
   #stormwrap{margin-top:14px;display:flex;align-items:center;gap:8px;justify-content:flex-end;pointer-events:auto}
@@ -89,14 +90,14 @@
   <div id="phase">黄昏</div>
   <div id="clock">18:00 &nbsp;/&nbsp; ×1</div>
   <div id="speeds">
-    <div class="sp" data-s="1">×1</div>
-    <div class="sp" data-s="4">×4</div>
-    <div class="sp" data-s="12">×12</div>
-    <div class="sp" data-s="0">暂停</div>
+    <button type="button" class="sp" data-s="1">×1</button>
+    <button type="button" class="sp" data-s="4">×4</button>
+    <button type="button" class="sp" data-s="12">×12</button>
+    <button type="button" class="sp" data-s="0">暂停</button>
   </div>
   <div id="stormwrap"><span>STORM</span><div id="stormbar"><div id="stormfill"></div></div>
-    <div class="sp" id="stormbtn" title="按 Space">起风</div></div>
-  <div id="viewwrap"><div class="sp" id="viewbtn" title="全景 / 内景">内景</div></div>
+    <button type="button" class="sp" id="stormbtn" title="按 Space">起风</button></div>
+  <div id="viewwrap"><button type="button" class="sp" id="viewbtn" title="全景 / 内景（V）">内景</button></div>
   <div id="fps">— FPS</div>
 </div>
 
@@ -104,6 +105,7 @@
   <div><b>拖动 / ← →</b>环视瓶身（静置自动旋转）</div>
   <div><b>滚轮 / + −</b>推近 / 拉远</div>
   <div><b>SPACE</b>按住掀起风暴（<b>F</b> 锁定）</div>
+  <div><b>V</b>全景 / 内景（内景对准岛屿）</div>
   <div><b>1 / 2 / 3</b>延时 ×1 / ×4 / ×12</div>
   <div><b>0 或 P</b>暂停时间</div>
 </div>
@@ -1315,6 +1317,7 @@ const camKeys = {};
 addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); spaceDown = true; }
   if (e.code === 'KeyF') stormLatch = !stormLatch;
+  if (e.code === 'KeyV') setView(cam.focusT > 0.5);
   if (e.code === 'Digit1') setSpeed(1);
   if (e.code === 'Digit2') setSpeed(4);
   if (e.code === 'Digit3') setSpeed(12);
