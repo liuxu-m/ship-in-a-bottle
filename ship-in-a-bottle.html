@@ -1236,11 +1236,17 @@ let camReady = false;
 function fitCamera(keepZoom) {
   if (!camReady) return;
   const a = innerWidth / innerHeight;
-  // ① 全景：按视口比例算出"能装下整只瓶子"的距离
-  //    可见宽 = 2·d·tan(FOV/2)·aspect = 0.728·d·aspect；瓶长 25.6，留 7.5% 余量
-  cam.fitWide = clamp(Math.max(27.5 / (0.728 * a), 20 + (innerWidth - 700) * 0.0096), 21, 95);
   const wide = a >= 1.45;                                    // 宽屏保留桌面构图
-  cam.wideTx = wide ? 0 : 5.6;                               // 窄屏以瓶身轴向中心取景
+  // ① 全景：可见宽 = 2·d·tan(FOV/2)·aspect = 0.728·d·aspect
+  //    宽屏留 7.5% 余量装下整只瓶子（27.5）；窄屏只装「瓶腹 + 肩 + 一截瓶颈」（15.5）——
+  //    瓶颈出画没关系，反正窄屏本来也装不下 25.6 的瓶长，代价换成「岛在沧海正中」更值。
+  cam.fitWide = clamp(Math.max((wide ? 27.5 : 15.5) / (0.728 * a),
+                               (wide ? 20 : 12) + (innerWidth - 700) * 0.0096),
+                      wide ? 21 : 9, 95);
+  //    注视点恒为瓶腹轴向中心 x=0 —— 瓶腹最宽处正中 = IC.x = 沧海的几何中心。
+  //    ⚠️ 曾按窄屏把注视点推到 x=5.6（整瓶轴向中点，落在肩/细颈段）想让瓶子居中，
+  //    结果中央只剩一条通颈空海，岛被甩到画面右缘，正是"沧海中心没有岛"的观感来源。
+  cam.wideTx = 0;
   cam.wideTy = wide ? 5.75 : 6.15;
   cam.wideTz = 0;
   cam.elWide = wide ? 0.225 : 0.27;                         // 窄屏多俯一点，让桌面撑满竖向留白
